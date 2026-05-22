@@ -1,142 +1,87 @@
+import os
 import pandas as pd
 import numpy as np
+import joblib
+
 from sklearn.model_selection import StratifiedShuffleSplit
 from sklearn.pipeline import Pipeline
 from sklearn.compose import ColumnTransformer
 from sklearn.impute import SimpleImputer
 from sklearn.preprocessing import StandardScaler, OneHotEncoder
-from sklearn.linear_model import LinearRegression
-from sklearn.tree import DecisionTreeRegressor
-from sklearn.ensemble import RandomForestRegressor
-# from xgboost import XGBRegressor
-from sklearn.ensemble import GradientBoostingRegressor
-from sklearn.svm import SVR
-from sklearn.model_selection import cross_val_score
-from sklearn.metrics import root_mean_squared_error
- 
-# 1. Load the data
-housing = pd.read_csv("housing.csv")
- 
-# 2. Create a stratified test set based on income category
-housing["income_cat"] = pd.cut(
-    housing["median_income"],
-    bins=[0., 1.5, 3.0, 4.5, 6., np.inf],
-    labels=[1, 2, 3, 4, 5]
-)
- 
-split = StratifiedShuffleSplit(n_splits=1, test_size=0.2, random_state=42)
-for train_index, test_index in split.split(housing, housing["income_cat"]):
-    strat_train_set = housing.loc[train_index].drop("income_cat", axis=1)
-    strat_test_set = housing.loc[test_index].drop("income_cat", axis=1)
- 
-# Work on a copy of training data
-housing = strat_train_set.copy()
- 
-# 3. Separate features and labels
-housing_labels = housing["median_house_value"].copy()
-housing = housing.drop("median_house_value", axis=1)
- 
-# 4. Separate numerical and categorical columns
-num_attribs = housing.drop("ocean_proximity", axis=1).columns.tolist()
-cat_attribs = ["ocean_proximity"]
- 
-# 5. Pipelines
-# Numerical pipeline
-num_pipeline = Pipeline([
-    ("imputer", SimpleImputer(strategy="median")),
-    ("scaler", StandardScaler()),
-])
- 
-# Categorical pipeline
-cat_pipeline = Pipeline([
-    # ("ordinal", OrdinalEncoder())  # Use this if you prefer ordinal encoding
-    ("onehot", OneHotEncoder(handle_unknown="ignore"))
-])
- 
-# Full pipeline
-full_pipeline = ColumnTransformer([
-    ("num", num_pipeline, num_attribs),
-    ("cat", cat_pipeline, cat_attribs),
-])
+from xgboost import XGBRegressor
+from sklearn.metrics import root_mean_squared_error,r2_score
 
-# 6. Transform the data
-housing_prepared = full_pipeline.fit_transform(housing)
- 
-# housing_prepared is now a NumPy array ready for training
-# print(housing_prepared.shape)
+MODEL_FILE = "model.pkl"
+PIPELINE_FILE = "pipeline.pkl"
 
-# Linear Regression
-# lin_reg = LinearRegression()
-# lin_reg.fit(housing_prepared, housing_labels)
- 
-# Decision Tree
-# tree_reg = DecisionTreeRegressor(random_state=42)
-# tree_reg.fit(housing_prepared, housing_labels)
- 
-# Random Forest
-# forest_reg = RandomForestRegressor(random_state=42)
-# forest_reg.fit(housing_prepared, housing_labels)
+def build_pipeline(num_attribs, cat_attribs):
+    num_pipeline = Pipeline([
+        ("imputer", SimpleImputer(strategy="median")),
+        ("scaler", StandardScaler())
+    ])
+    cat_pipeline = Pipeline([
+        ("onehot", OneHotEncoder(handle_unknown="ignore"))
+    ])
+    full_pipeline = ColumnTransformer([
+        ("num", num_pipeline, num_attribs),
+        ("cat", cat_pipeline, cat_attribs)
+    ])
+    return full_pipeline
 
-#Gradient Boosting Regressor
-gradient_reg = GradientBoostingRegressor(n_estimators=100, learning_rate=0.1)
-gradient_reg.fit(housing_prepared, housing_labels)
+if not os.path.exists(MODEL_FILE):
+    # TRAINING PHASE
+    housing = pd.read_csv("housing.csv")
+    housing['income_cat'] = pd.cut(housing["median_income"], 
+                                   bins=[0.0, 1.5, 3.0, 4.5, 6.0, np.inf], 
+                                   labels=[1, 2, 3, 4, 5])
+    
+    split = StratifiedShuffleSplit(n_splits=1, test_size=0.2, random_state=42)
+    for train_index, test_index in split.split(housing, housing['income_cat']):
+        train_set = housing.loc[train_index].drop("income_cat", axis=1)
+        test_set  = housing.loc[test_index].drop("income_cat",axis=1)
+    
+    #Saving testing features and labels separately
+    test_set[["median_house_value"]].to_csv("input_labels.csv", index=False)
+    test_set.drop("median_house_value", axis=1).to_csv("input_features.csv", index=False)
 
-#XGBoost Regressor
-# xgb_reg = XGBRegressor(n_estimators=100, learning_rate=0.1)
-# xgb_reg.fit(housing_prepared, housing_labels)
- 
-# Predict using training data
-# lin_preds = lin_reg.predict(housing_prepared)
-# tree_preds = tree_reg.predict(housing_prepared)
-# forest_preds = forest_reg.predict(housing_prepared)
-gradient_preds = gradient_reg.predict(housing_prepared)
-# xgb_preds = xgb_reg.predict(housing_prepared)
- 
-# Calculate RMSE
-# lin_rmse = root_mean_squared_error(housing_labels, lin_preds)
-# tree_rmse = root_mean_squared_error(housing_labels, tree_preds)
-# forest_rmse = root_mean_squared_error(housing_labels, forest_preds)
-# gradient_rmse = root_mean_squared_error(housing_labels, gradient_preds)
-# xgb_rmse = root_mean_squared_error(housing_labels, forest_preds)
- 
-# print("Linear Regression RMSE:", lin_rmse)
-# print("Decision Tree RMSE:", tree_rmse)
-# print("Random Forest RMSE:", forest_rmse)
-# print("Gradient Boosting RMSE:", gradient_rmse)
-# print("Random Forest RMSE:", xgb_rmse)
+    housing_labels = train_set["median_house_value"].copy()
+    housing_features = train_set.drop("median_house_value", axis=1)
 
-#Output Rmse before cross validation
-'''
-Linear Regression RMSE: 69050.56219504567
-Decision Tree RMSE: 0.0
-Random Forest RMSE: 18342.366362322846
-Gradient Boosting RMSE: 53494.18776891836
-'''
+    num_attribs = housing_features.drop("ocean_proximity", axis=1).columns.tolist()
+    cat_attribs = ["ocean_proximity"]
 
-#Predicting rmses using Cross Validation
-# lin_rmses = -cross_val_score(lin_reg,housing_prepared,housing_labels,scoring="neg_root_mean_squared_error",cv=10)
+    pipeline = build_pipeline(num_attribs, cat_attribs)
+    housing_prepared = pipeline.fit_transform(housing_features)
 
-# tree_rmses = -cross_val_score(tree_reg,housing_prepared,housing_labels,scoring="neg_root_mean_squared_error",cv=10)
+    model = XGBRegressor(n_estimators=100, learning_rate=0.1)
+    model.fit(housing_prepared, housing_labels)
 
-# forest_rmses = -cross_val_score(forest_reg,housing_prepared,housing_labels,scoring="neg_root_mean_squared_error",cv=10)
+    # Save model and pipeline
+    joblib.dump(model, MODEL_FILE)
+    joblib.dump(pipeline, PIPELINE_FILE)
 
-gradient_rmses = -cross_val_score(gradient_reg,housing_prepared,housing_labels,scoring="neg_root_mean_squared_error",cv=10)
+    print("Model trained and saved.")
 
-# print("Linear Regression RMSE:", lin_rmses)
-# print(pd.Series(lin_rmses).describe())
-# print("Decision Tree RMSE:", tree_rmses)
-# print(pd.Series(tree_rmses).describe())
-# print("Random Forest RMSE:", forest_rmses)
-# print(pd.Series(forest_rmses).describe())
-print("Gradient Boosting RMSE:", gradient_rmses)
-print(pd.Series(gradient_rmses).describe())
-# print("Random Forest RMSE:", xgb_rmses)
+else:
+    # INFERENCE PHASE
+    model = joblib.load(MODEL_FILE)
+    pipeline = joblib.load(PIPELINE_FILE)
 
+    input_data = pd.read_csv("input_features.csv")
+    transformed_input = pipeline.transform(input_data)
+    predictions = model.predict(transformed_input)
+    input_data["predicted_house_value"] = predictions
 
-#Output mean rmse using cross validation
-'''
-Linear Regression RMSE:  69204.322755
-Decision Tree RMSE:  69081.361563
-Random Forest RMSE: 49432.126788
-Gradient Boosting RMSE: 55427.942029
-'''
+     # Calculated Rmse if labels are available
+    if os.path.exists("input_labels.csv"):
+        actual = pd.read_csv("input_labels.csv")["median_house_value"]
+        rmse = root_mean_squared_error(actual, predictions)
+        r2   = r2_score(actual, predictions)
+        print(f"Test RMSE: {rmse:,.0f}")
+        print(f"R² score  : {r2:.4f}")
+
+    input_data.to_csv("output.csv", index=False)
+    print("Inference complete. Results saved to output.csv")
+
+# Test RMSE: 46,751
+# R² score  : 0.8323
